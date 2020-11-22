@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 using v2rayN.Forms;
@@ -26,27 +25,20 @@ namespace v2rayN
             }
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += new System.Threading.ThreadExceptionEventHandler(Application_ThreadException);
+            Application.ThreadException += new ThreadExceptionEventHandler(Application_ThreadException);
             AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
 
 
             //AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
 
-            Thread.Sleep(300); // 尽量避免切换语言后提示“已经运行”
-            Process instance = RunningInstance();
-            if (instance == null)
+            if (!IsDuplicateInstance())
             {
-                if (!UnzipLibs())
-                {
-                    UI.Show($"Error preparing the environment(准备运行环境出错)");
-                    return;
-                }
 
                 Utils.SaveLog("v2rayN start up " + Utils.GetVersion());
 
                 //设置语言环境
                 string lang = Utils.RegReadValue(Global.MyRegPath, Global.MyRegKeyLanguage, "zh-Hans");
-                System.Threading.Thread.CurrentThread.CurrentUICulture = new System.Globalization.CultureInfo(lang);
+                Thread.CurrentThread.CurrentUICulture = new System.Globalization.CultureInfo(lang);
 
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
@@ -54,7 +46,7 @@ namespace v2rayN
             }
             else
             {
-                UI.Show($"v2rayN is already running(v2rayN已经运行)");
+                UI.ShowWarning($"v2rayN is already running(v2rayN已经运行)");
             }
         }
 
@@ -81,26 +73,20 @@ namespace v2rayN
         //}
 
         /// <summary> 
-        /// 获取正在运行的实例，没有运行的实例返回null; 
+        /// 检查是否已在运行
         /// </summary> 
-        public static Process RunningInstance()
+        public static bool IsDuplicateInstance()
         {
-            Process current = Process.GetCurrentProcess();
-            Process[] processes = Process.GetProcessesByName(current.ProcessName);
-            foreach (Process process in processes)
-            {
-                if (process.Id != current.Id)
-                {
-                    if (Assembly.GetExecutingAssembly().Location.Replace("/", "\\") == process.MainModule.FileName)
-                    {
-                        return process;
-                    }
-                }
-            }
-            return null;
+            //string name = "v2rayN";
+
+            string name = Utils.GetExePath(); // Allow different locations to run
+            name = name.Replace("\\", "/"); // https://stackoverflow.com/questions/20714120/could-not-find-a-part-of-the-path-error-while-creating-mutex
+            
+            Global.mutexObj = new Mutex(false, name, out bool bCreatedNew);
+            return !bCreatedNew;
         }
 
-        static void Application_ThreadException(object sender, System.Threading.ThreadExceptionEventArgs e)
+        static void Application_ThreadException(object sender, ThreadExceptionEventArgs e)
         {
             Utils.SaveLog("Application_ThreadException", e.Exception);
         }
@@ -108,22 +94,6 @@ namespace v2rayN
         static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             Utils.SaveLog("CurrentDomain_UnhandledException", (Exception)e.ExceptionObject);
-        }
-
-        static bool UnzipLibs()
-        {
-            var fileName = Utils.GetPath("libs.zip");
-            if (!FileManager.ByteArrayToFile(fileName, Resources.libs))
-            {
-                return false;
-            }
-
-            if (!FileManager.ZipExtractToFile(fileName))
-            {
-                return false;
-            }
-
-            return true;
         }
     }
 }

@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace v2rayUpgrade
@@ -14,12 +11,6 @@ namespace v2rayUpgrade
         [STAThread]
         static void Main(string[] args)
         {
-            if (args.Length <= 0)
-            {
-                MessageBox.Show("Please use v2rayN to upgrade(请用v2rayN升级)");
-                return;
-            }
-
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm(args));

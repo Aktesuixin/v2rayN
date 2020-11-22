@@ -54,14 +54,16 @@ namespace v2rayN.Handler
 
         private readonly string nLatestUrl = "https://github.com/2dust/v2rayN/releases/latest";
         private const string nUrl = "https://github.com/2dust/v2rayN/releases/download/{0}/v2rayN.zip";
-        private readonly string coreLatestUrl = "https://github.com/v2ray/v2ray-core/releases/latest";
-        private const string coreUrl = "https://github.com/v2ray/v2ray-core/releases/download/{0}/v2ray-windows-{1}.zip";
+        private readonly string coreLatestUrl = "https://github.com/v2fly/v2ray-core/releases/latest";
+        private const string coreUrl = "https://github.com/v2fly/v2ray-core/releases/download/{0}/v2ray-windows-{1}.zip";
 
-        public async Task CheckUpdateAsync(string type)
+        public async void CheckUpdateAsync(string type)
         {
             Utils.SetSecurityProtocol();
-            WebRequestHandler webRequestHandler = new WebRequestHandler();
-            webRequestHandler.AllowAutoRedirect = false;
+            WebRequestHandler webRequestHandler = new WebRequestHandler
+            {
+                AllowAutoRedirect = false
+            };
             HttpClient httpClient = new HttpClient(webRequestHandler);
 
             string url;
@@ -99,7 +101,7 @@ namespace v2rayN.Handler
                 string filePath = Utils.GetPath("V2ray.exe");
                 if (!File.Exists(filePath))
                 {
-                    string msg = string.Format(UIRes.I18N("NotFoundCore"), @"https://github.com/v2ray/v2ray-core/releases");
+                    string msg = string.Format(UIRes.I18N("NotFoundCore"), @"https://github.com/v2fly/v2ray-core/releases");
                     //ShowMsg(true, msg);
                     return "";
                 }
@@ -134,13 +136,15 @@ namespace v2rayN.Handler
                 string curVersion;
                 string message;
                 string url;
-                if (type == "Core") {
+                if (type == "Core")
+                {
                     curVersion = "v" + getV2rayVersion();
                     message = string.Format(UIRes.I18N("IsLatestCore"), curVersion);
                     string osBit = Environment.Is64BitProcess ? "64" : "32";
                     url = string.Format(coreUrl, version, osBit);
                 }
-                else if (type == "v2rayN") {
+                else if (type == "v2rayN")
+                {
                     curVersion = FileVersionInfo.GetVersionInfo(Utils.GetExePath()).FileVersion.ToString();
                     message = string.Format(UIRes.I18N("IsLatestN"), curVersion);
                     url = string.Format(nUrl, version);
@@ -170,17 +174,18 @@ namespace v2rayN.Handler
 
         #region Download 
 
-        public void DownloadFileAsync(Config config, string url, WebProxy webProxy, int downloadTimeout)
+        public WebClientEx DownloadFileAsync(string url, WebProxy webProxy, int downloadTimeout)
         {
+            WebClientEx ws = new WebClientEx();
             try
             {
                 Utils.SetSecurityProtocol();
-                UpdateCompleted?.Invoke(this, new ResultEventArgs(false, "Downloading..."));
+                UpdateCompleted?.Invoke(this, new ResultEventArgs(false, UIRes.I18N("Downloading")));
 
                 progressPercentage = -1;
                 totalBytesToReceive = 0;
 
-                WebClientEx ws = new WebClientEx();
+                //WebClientEx ws = new WebClientEx();
                 DownloadTimeout = downloadTimeout;
                 if (webProxy != null)
                 {
@@ -197,6 +202,7 @@ namespace v2rayN.Handler
 
                 Error?.Invoke(this, new ErrorEventArgs(ex));
             }
+            return ws;
         }
 
         void ws_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
@@ -226,7 +232,6 @@ namespace v2rayN.Handler
                 }
             }
         }
-
         void ws_DownloadFileCompleted(object sender, System.ComponentModel.AsyncCompletedEventArgs e)
         {
             try
@@ -237,7 +242,7 @@ namespace v2rayN.Handler
                     {
                         ((WebClientEx)sender).Dispose();
                         TimeSpan ts = (DateTime.Now - totalDatetime);
-                        string speed = string.Format("<{0} M/s", (totalBytesToReceive / ts.TotalMilliseconds / 1000).ToString("#0.##"));
+                        string speed = string.Format("{0} M/s", (totalBytesToReceive / ts.TotalMilliseconds / 1000).ToString("#0.##"));
                         UpdateCompleted(this, new ResultEventArgs(true, speed));
                         return;
                     }
@@ -337,9 +342,9 @@ namespace v2rayN.Handler
             byte[] bytes = Convert.FromBase64String(response);
             string content = Encoding.UTF8.GetString(bytes);
             List<string> valid_lines = new List<string>();
-            using (var sr = new StringReader(content))
+            using (StringReader sr = new StringReader(content))
             {
-                foreach (var line in sr.NonWhiteSpaceLines())
+                foreach (string line in sr.NonWhiteSpaceLines())
                 {
                     if (line.BeginWithAny(IgnoredLineBegins))
                         continue;

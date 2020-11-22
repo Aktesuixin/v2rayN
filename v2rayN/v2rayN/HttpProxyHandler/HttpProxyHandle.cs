@@ -4,6 +4,19 @@ using v2rayN.Mode;
 namespace v2rayN.HttpProxyHandler
 {
     /// <summary>
+    /// 系统代理(http)模式
+    /// </summary>
+    public enum ListenerType
+    {
+        noHttpProxy = 0,
+        GlobalHttp = 1,
+        GlobalPac = 2,
+        HttpOpenAndClear = 3,
+        PacOpenAndClear = 4,
+        HttpOpenOnly = 5,
+        PacOpenOnly = 6
+    }
+    /// <summary>
     /// 系统代理(http)总处理
     /// 启动privoxy提供http协议
     /// 设置IE系统代理或者PAC模式
@@ -12,50 +25,64 @@ namespace v2rayN.HttpProxyHandler
     {
         private static bool Update(Config config, bool forceDisable)
         {
-            int type = config.listenerType;
+            ListenerType type = config.listenerType;
 
             if (forceDisable)
             {
-                type = 0;
+                type = ListenerType.noHttpProxy;
             }
 
             try
             {
-                if (type != 0)
+                if (type != ListenerType.noHttpProxy)
                 {
-                    var port = Global.httpPort;
+                    int port = Global.httpPort;
                     if (port <= 0)
                     {
                         return false;
                     }
-                    if (type == 1)
+                    if (type == ListenerType.GlobalHttp)
                     {
                         //PACServerHandle.Stop();
-                        ProxySetting.SetProxy($"{Global.Loopback}:{port}", Global.IEProxyExceptions, 2);
+                        //ProxySetting.SetProxy($"{Global.Loopback}:{port}", Global.IEProxyExceptions, 2);
+                        SysProxyHandle.SetIEProxy(true, true, $"{Global.Loopback}:{port}");
                     }
-                    else if (type == 2)
+                    else if (type == ListenerType.GlobalPac)
                     {
                         string pacUrl = GetPacUrl();
-                        ProxySetting.SetProxy(pacUrl, "", 4);
+                        //ProxySetting.SetProxy(pacUrl, "", 4);
+                        SysProxyHandle.SetIEProxy(true, false, pacUrl);
                         //PACServerHandle.Stop();
                         PACServerHandle.Init(config);
                     }
-                    else if (type == 3)
+                    else if (type == ListenerType.HttpOpenAndClear)
                     {
                         //PACServerHandle.Stop();
-                        ProxySetting.UnsetProxy();
+                        SysProxyHandle.ResetIEProxy();
                     }
-                    else if (type == 4)
+                    else if (type == ListenerType.PacOpenAndClear)
                     {
                         string pacUrl = GetPacUrl();
-                        ProxySetting.UnsetProxy();
+                        SysProxyHandle.ResetIEProxy();
+                        //PACServerHandle.Stop();
+                        PACServerHandle.Init(config);
+                    }
+                    else if (type == ListenerType.HttpOpenOnly)
+                    {
+                        //PACServerHandle.Stop();
+                        //SysProxyHandle.ResetIEProxy();
+                    }
+                    else if (type == ListenerType.PacOpenOnly)
+                    {
+                        string pacUrl = GetPacUrl();
+                        //SysProxyHandle.ResetIEProxy();
                         //PACServerHandle.Stop();
                         PACServerHandle.Init(config);
                     }
                 }
                 else
                 {
-                    ProxySetting.UnsetProxy();
+                    SysProxyHandle.ResetIEProxy();
                     //PACServerHandle.Stop();
                 }
             }
@@ -100,7 +127,10 @@ namespace v2rayN.HttpProxyHandler
         {
             try
             {
-                Update(config, true);
+                if (config.listenerType != ListenerType.HttpOpenOnly && config.listenerType != ListenerType.PacOpenOnly)
+                {
+                    Update(config, true);
+                }
 
                 PrivoxyHandler.Instance.Stop();
 
@@ -121,6 +151,11 @@ namespace v2rayN.HttpProxyHandler
         public static void RestartHttpAgent(Config config, bool forced)
         {
             bool isRestart = false;
+            if (config.listenerType == ListenerType.noHttpProxy)
+            {
+                // 关闭http proxy时，直接返回
+                return;
+            }
             //强制重启或者socks端口变化
             if (forced)
             {
