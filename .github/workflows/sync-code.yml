@@ -1,0 +1,39 @@
+name: Sync Source Code
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          repository: 2dust/v2rayN
+          path: upstream
+          fetch-depth: 0
+
+      - name: Verify Changes
+        id: verify
+        run: |
+          cd upstream
+          upstream_hash=$(git rev-parse HEAD)
+          fork_hash=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN/commits/main" | jq -r '.sha')
+          [ "$upstream_hash" != "$fork_hash" ] && echo "NEED_SYNC=true" >> $GITHUB_OUTPUT
+
+      - name: Mirror Code
+        if: steps.verify.outputs.NEED_SYNC == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          cd upstream
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/Aktesuixin/v2rayN.git
+          git push origin +refs/heads/main:refs/heads/main \
+                    +refs/tags/*:refs/tags/*
+
+      - name: Log Sync
+        if: steps.verify.outputs.NEED_SYNC == 'true'
+        run: |
+          echo "Synced new commit: $(cd upstream && git log -1 --pretty=%H)"
