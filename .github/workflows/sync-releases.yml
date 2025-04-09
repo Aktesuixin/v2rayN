@@ -1,56 +1,48 @@
-name: Sync v2rayN Releases
+name: Sync All Release Assets
 
 on:
-  schedule:
-    - cron: "0 1 * * *"  # 每天UTC时间1:00自动运行
-  workflow_dispatch:     # 允许手动触发
+  workflow_dispatch:
+  repository_dispatch:
 
 jobs:
-  sync-releases:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup environment
+      - name: Setup Environment
+        shell: bash
         run: |
+          mkdir -p ./assets
           sudo apt-get update
           sudo apt-get install -y curl jq
 
-      - name: Install GitHub CLI
+      - name: Get Release Info
+        id: release
         run: |
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y gh
+          latest=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest")
+          tag=$(jq -r '.tag_name' <<< "$latest")
+          assets=$(jq -r '.assets[] | .browser_download_url' <<< "$latest" | wc -l)
+          
+          echo "TAG=$tag" >> $GITHUB_OUTPUT
+          echo "ASSET_COUNT=$assets" >> $GITHUB_OUTPUT
+          echo "$latest" > release.json
 
-      - name: Authenticate
-        run: gh auth login --with-token <<< "${{ secrets.GH_TOKEN }}"
-
-      - name: Get latest release info
-        id: get-release
+      - name: Download All Assets
         run: |
-          response=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest")
-          tag=$(echo "$response" | jq -r '.tag_name')
-          echo "tag_name=$tag" >> $GITHUB_OUTPUT
-          echo "$response" > release.json
+          jq -r '.assets[].browser_download_url' release.json \
+            | xargs -P 4 -I {} wget -q -P ./assets {}
 
-      - name: Download assets
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          mkdir -p download_assets
-          cd download_assets
-          jq -r '.assets[].browser_download_url' ../release.json | xargs -n1 wget -q
-          cd ..
+          # 动态生成上传参数
+          files=$(cd ./assets && ls | xargs -I {} echo "{}" | sed "s/^/'.\/assets\/&'/")
+          
+          gh release create ${{ steps.release.outputs.TAG }} \
+            --title "${{ steps.release.outputs.TAG }}" \
+            --notes "Synced from 2dust/v2rayN (${{ steps.release.outputs.ASSET_COUNT }} assets)" \
+            $files
 
-      - name: Create release (with file existence check)
-        run: |
-          if ls download_assets/* 1> /dev/null 2>&1; then
-            gh release create "${{ steps.get-release.outputs.tag_name }}" \
-              --repo Aktesuixin/v2rayN \
-              --title "${{ steps.get-release.outputs.tag_name }}" \
-              --notes "Automatically synced from 2dust/v2rayN" \
-              download_assets/*
-          else
-            echo "No assets downloaded, skipping release creation"
-            exit 1
-          fi
+      - name: Cleanup
+        if: always()
+        run: rm -rf ./assets release.json
