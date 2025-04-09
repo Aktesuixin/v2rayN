@@ -2,7 +2,7 @@ name: Watch Upstream Changes
 
 on:
   schedule:
-    - cron: "0 1 * * *"  # 每10分钟检查一次
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,16 +12,54 @@ jobs:
       - name: Check Source Code Updates
         id: check-code
         run: |
-          upstream_commit=$(curl -s "https://api.github.com/repos/2dust/v2rayN/commits/main" | jq -r '.sha')
-          fork_commit=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN/commits/main" | jq -r '.sha')
-          [ "$upstream_commit" != "$fork_commit" ] && echo "CODE_UPDATE=true" >> $GITHUB_OUTPUT
+          # 添加 API 请求调试
+          echo "Checking source code updates..."
+          
+          # 获取默认分支（兼容 main/master）
+          upstream_branch=$(curl -s "https://api.github.com/repos/2dust/v2rayN" | jq -r '.default_branch')
+          fork_branch=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN" | jq -r '.default_branch')
+          
+          # 带错误处理的请求
+          upstream_commit=$(curl -f -s \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/2dust/v2rayN/commits/$upstream_branch" | jq -r '.sha')
+          
+          fork_commit=$(curl -f -s \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Aktesuixin/v2rayN/commits/$fork_branch" | jq -r '.sha')
+          
+          if [ -z "$upstream_commit" ] || [ -z "$fork_commit" ]; then
+            echo "ERROR: Failed to get commit SHA"
+            exit 1
+          fi
+          
+          if [ "$upstream_commit" != "$fork_commit" ]; then
+            echo "CODE_UPDATE=true" >> $GITHUB_OUTPUT
+            echo "UPSTREAM_COMMIT=$upstream_commit" >> $GITHUB_OUTPUT
+          fi
 
       - name: Check Release Updates
         id: check-release
         run: |
-          upstream_release=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest" | jq -r '.tag_name')
-          fork_release=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN/releases/latest" | jq -r '.tag_name')
-          [ "$upstream_release" != "$fork_release" ] && echo "RELEASE_UPDATE=true" >> $GITHUB_OUTPUT
+          echo "Checking release updates..."
+          
+          upstream_release=$(curl -f -s \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/2dust/v2rayN/releases/latest" | jq -r '.tag_name')
+          
+          fork_release=$(curl -f -s \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Aktesuixin/v2rayN/releases/latest" | jq -r '.tag_name')
+          
+          if [ -z "$upstream_release" ] || [ -z "$fork_release" ]; then
+            echo "ERROR: Failed to get release tags"
+            exit 1
+          fi
+          
+          if [ "$upstream_release" != "$fork_release" ]; then
+            echo "RELEASE_UPDATE=true" >> $GITHUB_OUTPUT
+            echo "NEW_TAG=$upstream_release" >> $GITHUB_OUTPUT
+          fi
 
       - name: Trigger Code Sync
         if: steps.check-code.outputs.CODE_UPDATE == 'true'
