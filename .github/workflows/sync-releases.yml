@@ -1,8 +1,8 @@
-name: Sync Releases Automatically
+name: Sync v2rayN Releases
 
 on:
   schedule:
-    - cron: "0 1 * * *"  # 每天 UTC 时间 1:00 AM 自动运行
+    - cron: "0 1 * * *"  # 每天 UTC 1:00 AM 自动检查
   workflow_dispatch:     # 允许手动触发
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup GitHub CLI
+      - name: Install GitHub CLI
         run: |
           sudo apt-get install -y curl
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -23,9 +23,9 @@ jobs:
       - name: Login to GitHub CLI
         run: gh auth login --with-token <<< "${{ secrets.GH_TOKEN }}"
 
-      - name: Download Latest Release from Source
+      - name: Fetch Latest Release from 2dust/v2rayN
         run: |
-          gh release download --repo 2dust/v2rayN --pattern "*"
+          gh release download --repo 2dust/v2rayN --latest
 
       - name: Get Release Tag
         id: get-tag
@@ -33,10 +33,10 @@ jobs:
           TAG=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
           echo "tag_name=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Upload Release to Fork
+      - name: Upload to Aktesuixin/v2rayN
         run: |
           gh release create "${{ steps.get-tag.outputs.tag_name }}" \
             --repo Aktesuixin/v2rayN \
             --title "${{ steps.get-tag.outputs.tag_name }}" \
             --notes "Automatically synced from 2dust/v2rayN" \
-            *.zip *.tar.gz *.deb *.AppImage *.dmg  # 根据实际情况调整文件类型
+            *.zip *.exe *.7z *.deb *.AppImage # 根据 v2rayN 的实际文件类型调整
