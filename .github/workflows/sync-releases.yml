@@ -2,17 +2,17 @@ name: Sync v2rayN Releases
 
 on:
   schedule:
-    - cron: "0 1 * * *"  # 每天 UTC 1:00 AM 自动检查
-  workflow_dispatch:     # 允许手动触发
+    - cron: "0 1 * * *"  # Daily at 01:00 UTC
+  workflow_dispatch:     # Manual trigger
 
 jobs:
   sync-releases:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install GitHub CLI
+      - name: Setup GitHub CLI
         run: |
           sudo apt-get install -y curl
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -20,23 +20,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Login to GitHub CLI
+      - name: Authenticate CLI
         run: gh auth login --with-token <<< "${{ secrets.GH_TOKEN }}"
 
-      - name: Fetch Latest Release from 2dust/v2rayN
+      - name: Fetch latest release metadata
+        id: get-release
         run: |
-          gh release download --repo 2dust/v2rayN --latest
-
-      - name: Get Release Tag
-        id: get-tag
-        run: |
-          TAG=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          RESPONSE=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest")
+          TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
           echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+          echo "$RESPONSE" > release.json
 
-      - name: Upload to Aktesuixin/v2rayN
+      - name: Download assets
         run: |
-          gh release create "${{ steps.get-tag.outputs.tag_name }}" \
+          jq -r '.assets[].browser_download_url' release.json | xargs -n1 wget -q
+
+      - name: Publish to fork
+        run: |
+          gh release create "${{ steps.get-release.outputs.tag_name }}" \
             --repo Aktesuixin/v2rayN \
-            --title "${{ steps.get-tag.outputs.tag_name }}" \
+            --title "${{ steps.get-release.outputs.tag_name }}" \
             --notes "Automatically synced from 2dust/v2rayN" \
-            *.zip *.exe *.7z *.deb *.AppImage # 根据 v2rayN 的实际文件类型调整
+            ./*.{exe,zip,7z,deb}  # Adjust extensions as needed
