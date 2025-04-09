@@ -1,0 +1,48 @@
+name: Watch Upstream Changes
+
+on:
+  schedule:
+    - cron: "0 1 * * *"  # 每10分钟检查一次
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Source Code Updates
+        id: check-code
+        run: |
+          upstream_commit=$(curl -s "https://api.github.com/repos/2dust/v2rayN/commits/main" | jq -r '.sha')
+          fork_commit=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN/commits/main" | jq -r '.sha')
+          [ "$upstream_commit" != "$fork_commit" ] && echo "CODE_UPDATE=true" >> $GITHUB_OUTPUT
+
+      - name: Check Release Updates
+        id: check-release
+        run: |
+          upstream_release=$(curl -s "https://api.github.com/repos/2dust/v2rayN/releases/latest" | jq -r '.tag_name')
+          fork_release=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN/releases/latest" | jq -r '.tag_name')
+          [ "$upstream_release" != "$fork_release" ] && echo "RELEASE_UPDATE=true" >> $GITHUB_OUTPUT
+
+      - name: Trigger Code Sync
+        if: steps.check-code.outputs.CODE_UPDATE == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'sync-code.yml',
+              ref: 'main'
+            })
+
+      - name: Trigger Release Sync
+        if: steps.check-release.outputs.RELEASE_UPDATE == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'sync-releases.yml',
+              ref: 'main'
+            })
