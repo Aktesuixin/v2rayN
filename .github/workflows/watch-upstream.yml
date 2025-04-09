@@ -2,63 +2,34 @@ name: Watch Upstream Changes
 
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "* 1 * * *"
   workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Check Source Code Updates
+      - name: Get Default Branch
+        id: branch
+        run: |
+          # 动态获取当前仓库的默认分支
+          default_branch=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Aktesuixin/v2rayN" | jq -r '.default_branch')
+          echo "DEFAULT_BRANCH=$default_branch" >> $GITHUB_OUTPUT
+          echo "Using branch: $default_branch"
+
+      - name: Check Source Updates
         id: check-code
         run: |
-          # 添加 API 请求调试
-          echo "Checking source code updates..."
-          
-          # 获取默认分支（兼容 main/master）
-          upstream_branch=$(curl -s "https://api.github.com/repos/2dust/v2rayN" | jq -r '.default_branch')
-          fork_branch=$(curl -s "https://api.github.com/repos/Aktesuixin/v2rayN" | jq -r '.default_branch')
-          
-          # 带错误处理的请求
-          upstream_commit=$(curl -f -s \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/2dust/v2rayN/commits/$upstream_branch" | jq -r '.sha')
-          
-          fork_commit=$(curl -f -s \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Aktesuixin/v2rayN/commits/$fork_branch" | jq -r '.sha')
-          
-          if [ -z "$upstream_commit" ] || [ -z "$fork_commit" ]; then
-            echo "ERROR: Failed to get commit SHA"
-            exit 1
-          fi
+          upstream_commit=$(curl -s \
+            "https://api.github.com/repos/2dust/v2rayN/commits/${{ steps.branch.outputs.DEFAULT_BRANCH }}" | jq -r '.sha')
+          fork_commit=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Aktesuixin/v2rayN/commits/${{ steps.branch.outputs.DEFAULT_BRANCH }}" | jq -r '.sha')
           
           if [ "$upstream_commit" != "$fork_commit" ]; then
             echo "CODE_UPDATE=true" >> $GITHUB_OUTPUT
-            echo "UPSTREAM_COMMIT=$upstream_commit" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Check Release Updates
-        id: check-release
-        run: |
-          echo "Checking release updates..."
-          
-          upstream_release=$(curl -f -s \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/2dust/v2rayN/releases/latest" | jq -r '.tag_name')
-          
-          fork_release=$(curl -f -s \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Aktesuixin/v2rayN/releases/latest" | jq -r '.tag_name')
-          
-          if [ -z "$upstream_release" ] || [ -z "$fork_release" ]; then
-            echo "ERROR: Failed to get release tags"
-            exit 1
-          fi
-          
-          if [ "$upstream_release" != "$fork_release" ]; then
-            echo "RELEASE_UPDATE=true" >> $GITHUB_OUTPUT
-            echo "NEW_TAG=$upstream_release" >> $GITHUB_OUTPUT
           fi
 
       - name: Trigger Code Sync
@@ -66,21 +37,23 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'sync-code.yml',
-              ref: 'main'
-            })
-
-      - name: Trigger Release Sync
-        if: steps.check-release.outputs.RELEASE_UPDATE == 'true'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'sync-releases.yml',
-              ref: 'main'
-            })
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'sync-code.yml',
+                ref: '${{ steps.branch.outputs.DEFAULT_BRANCH }}',  # 使用动态分支
+                inputs: {
+                  source_commit: '${{ steps.check-code.outputs.UPSTREAM_COMMIT }}'
+                }
+              })
+            } catch (error) {
+              core.error("Trigger failed: " + error.message)
+              // 自动回退到 master 分支
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'sync-code.yml',
+                ref: 'master'
+              })
+            }
